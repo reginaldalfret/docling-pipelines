@@ -21,7 +21,7 @@ from docpipe.core.operators.extract.adapters.outbound.factories.entity_extractio
 from docpipe.core.operators.extract.ports.outbound.entity_extraction import EntityExtractionPort
 from docpipe.core.operators.extract.services.entity_extraction_service import EntityExtractionService
 from docpipe.core.operators.operator_utils import OperatorUtils
-from docpipe.utils.document_class_utils import DocumentClassUtils
+from docpipe.core.ports.document_class_provider import DocumentClassProvider, StaticDocumentClassProvider
 from docpipe.utils.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -46,13 +46,24 @@ class DoclingEntityAdapter(EntityExtractionPort):
     ADAPTER_NAME = OperatorConstants.ExtractionModes.ENTITY_MODE_DOCLING
     ADAPTER_DISPLAY_NAME = "Docling"
 
-    def __init__(self, *, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        *,
+        config: dict[str, Any],
+        document_class_provider: DocumentClassProvider | None = None,
+    ) -> None:
         """Initialize the adapter with configuration.
 
         Args:
             config: Configuration dictionary
+            document_class_provider: Provider for resolving document class
+                schemas and Docling templates.  Defaults to
+                ``StaticDocumentClassProvider`` (local JSON files).
         """
         super().__init__(config=config)
+        self.document_class_provider: DocumentClassProvider = (
+            document_class_provider if document_class_provider is not None else StaticDocumentClassProvider()
+        )
 
     def validate(self, *, config: dict[str, Any]) -> None:
         """Validate adapter configuration.
@@ -296,6 +307,7 @@ class DoclingEntityAdapter(EntityExtractionPort):
             node_name=self.node_name,
             batch_id=self.batch_id,
             global_config=self.global_config,
+            document_class_provider=self.document_class_provider,
         )
 
         # Delegate to service for orchestration
@@ -427,7 +439,7 @@ class DoclingEntityAdapter(EntityExtractionPort):
             document_types: List of document types to load schemas for
             schema_templates: Dictionary to populate with loaded schemas
         """
-        loaded_schemas = DocumentClassUtils.generate_docling_templates_for_types(document_types)
+        loaded_schemas = self.document_class_provider.generate_docling_templates_for_types(document_types)
         schema_templates.update(loaded_schemas)
 
 
@@ -449,6 +461,7 @@ class DoclingEntityExtractionService(EntityExtractionService):
         node_name: str | None = None,
         batch_id: str | None = None,
         global_config: dict[str, Any] | None = None,
+        document_class_provider: DocumentClassProvider | None = None,
     ) -> None:
         """Initialize the Docling entity extraction service.
 
@@ -461,6 +474,9 @@ class DoclingEntityExtractionService(EntityExtractionService):
             node_name: Node name for progress tracking (optional)
             batch_id: Batch identifier for progress tracking (optional)
             global_config: Global configuration for on-demand binary fetching (optional)
+            document_class_provider: Provider for resolving document class
+                schemas and Docling templates.  Defaults to
+                ``StaticDocumentClassProvider`` (local JSON files).
         """
         super().__init__(
             adapter=adapter,
@@ -470,6 +486,7 @@ class DoclingEntityExtractionService(EntityExtractionService):
             node_id=node_id,
             node_name=node_name,
             batch_id=batch_id,
+            document_class_provider=document_class_provider,
         )
         self.global_config = global_config or {}
 
@@ -507,5 +524,5 @@ class DoclingEntityExtractionService(EntityExtractionService):
             document_types: List of document types to load schemas for
             schema_templates: Dictionary to populate with loaded schemas
         """
-        loaded_schemas = DocumentClassUtils.generate_docling_templates_for_types(document_types)
+        loaded_schemas = self.document_class_provider.generate_docling_templates_for_types(document_types)
         schema_templates.update(loaded_schemas)

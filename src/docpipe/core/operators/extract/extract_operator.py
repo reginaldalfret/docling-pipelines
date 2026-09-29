@@ -129,6 +129,7 @@ from docpipe.core.operators.extract.domain.models import (
 from docpipe.core.operators.extract.ports.outbound.entity_extraction import EntityExtractionPort
 from docpipe.core.operators.extract.ports.outbound.text_extraction import TextExtractionPort
 from docpipe.core.operators.operator_utils import OperatorUtils, format_failed_docs_summary
+from docpipe.core.ports.document_class_provider import DocumentClassProvider, StaticDocumentClassProvider
 from docpipe.exceptions.docpipe_exceptions import FlowExecutionFailedException
 from docpipe.utils.data.transform import TransformUtils
 from docpipe.utils.infrastructure.logging import get_logger
@@ -190,7 +191,12 @@ class ExtractOperator(AbstractOperator):  # type: ignore[misc]
     category = OperatorCategory.Extract
     owner = DocpipeConstants.OWNER_DOCPIPE
 
-    def __init__(self, *, config: dict[str, Any]):
+    def __init__(
+        self,
+        *,
+        config: dict[str, Any],
+        document_class_provider: DocumentClassProvider | None = None,
+    ):
         """Initialize the unified extract operator.
 
         Parses the extraction mode, builds adapter-specific configuration,
@@ -213,11 +219,17 @@ class ExtractOperator(AbstractOperator):  # type: ignore[misc]
                     - expand_extracted_data: Expand entity data flag
                 - max_workers: Number of parallel workers (default: auto-detect)
                 - use_processes: Use processes vs threads (default: False)
+            document_class_provider: Provider for resolving document class
+                schemas and Docling templates.  Defaults to
+                ``StaticDocumentClassProvider`` (local JSON files).
 
         Raises:
             FlowExecutionFailedException: If extraction_mode is invalid or configuration is incomplete
         """
         super().__init__(config)
+        self._document_class_provider: DocumentClassProvider = (
+            document_class_provider if document_class_provider is not None else StaticDocumentClassProvider()
+        )
 
         # Extract text_extraction nested config and store for later use.
         # Uses `or {}` so that an explicit null is treated the same
@@ -352,6 +364,10 @@ class ExtractOperator(AbstractOperator):  # type: ignore[misc]
                     max_workers=entity_max_workers,
                 )
                 if self.entity_adapter:
+                    # Inject the document class provider so the adapter (and any
+                    # EntityExtractionService it creates) can use the correct provider.
+                    if hasattr(self.entity_adapter, "document_class_provider"):
+                        self.entity_adapter.document_class_provider = self._document_class_provider
                     logger.info(
                         "Created %s adapter for entity extraction mode: %s",
                         self.entity_adapter.ADAPTER_DISPLAY_NAME,
@@ -954,6 +970,7 @@ class ExtractOperator(AbstractOperator):  # type: ignore[misc]
             node_id=self.entity_adapter.node_id,
             node_name=self.entity_adapter.node_name,
             batch_id=self.entity_adapter.batch_id,
+            document_class_provider=self._document_class_provider,
         )
         _doc_types, schema_templates = service.prepare_schemas(table=table)
 
