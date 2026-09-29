@@ -1081,11 +1081,19 @@ class ExtractOperator(AbstractOperator):  # type: ignore[misc]
                             reason=f"Column '{self.doc_column}' is empty after text extraction.",
                         )
                     else:
+                        # Adapters that need the original file bytes (e.g. Docling VLM)
+                        # declare requires_binary_content = True on the port.
+                        # LLM-based adapters always receive extracted text.
+                        entity_content: str | bytes = (
+                            task.get("binary_content") or extracted_content
+                            if self.entity_adapter.requires_binary_content
+                            else extracted_content
+                        )
                         entity_future = entity_executor.submit(
                             self.entity_adapter.extract_entities_single,
                             doc_id=str(task["doc_id"]),
                             doc_name=task["doc_name"],
-                            content=extracted_content,
+                            content=entity_content,
                             schema=schema_to_use,
                         )
                         entity_future_to_info[entity_future] = (idx, str(task["doc_id"]), task["doc_name"])
